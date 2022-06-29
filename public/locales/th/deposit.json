@@ -1,0 +1,10 @@
+{
+    "search.deposit.transaction": "ค้นหาธุรกรรมการฝากเงิน",
+    "cancel": "ถูกดึงเครดิต",
+
+    "save.deposit.successfully": "บันทึกรายการโอนสำเร็จ",
+    "save.deposit.from.mobile.number.successfully": "บันทึกรายการโอนจาก {{mobileNumber}} สำเร็จ",
+
+    "refund.successfully": "ดึงเครดิตสำเร็จ",
+    "refund.deposit.from.mobile.number.successfully": "ดึงเครดิตจาก {{mobileNumber}} สำเร็จ"
+}
