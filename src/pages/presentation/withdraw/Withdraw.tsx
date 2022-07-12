@@ -7,7 +7,6 @@ import SubHeader, {
 	SubHeaderRight
 } from '../../../layout/SubHeader/SubHeader'
 import Page from '../../../layout/Page/Page'
-import { demoPages } from '../../../menu'
 import moment from 'moment'
 import { DateRange } from 'react-date-range'
 import Button, { ButtonGroup } from '../../../components/bootstrap/Button'
@@ -28,9 +27,8 @@ import { getWithdrawList } from 'common/apis/withdraw'
 import showNotification from 'components/extras/showNotification'
 import { useDispatch, useSelector } from 'react-redux'
 import { selectWithdrawList, selectWithdrawQuery } from 'redux/withdraw/selector'
-import { TransactionInterface } from 'common/apis/transaction'
+import { TransactionInterface, TransactionStatus, WITHDRAW_STATUS } from 'common/apis/transaction'
 import { storeWithdrawList, storeWithdrawQuery } from 'redux/withdraw/action'
-import CommonBanksDropdown from 'pages/common/CommonBanksDropdown'
 import CompanyBanksDropdown from 'pages/common/CompanyBanksDropdown'
 import { CompanyBankInterface, getCompanyBankList } from 'common/apis/companyBank'
 import Spinner from 'components/bootstrap/Spinner'
@@ -38,9 +36,15 @@ import { selectCompanyBankList } from 'redux/companyBank/selector'
 import { storeCompanyBank } from 'redux/companyBank/action'
 import { InfoTwoTone, Search } from '@mui/icons-material'
 import COLORS from 'common/data/enumColors'
+import { PermissionType, PermissionValue } from 'common/apis/user'
+import { CommonString } from 'common/data/enumStrings'
+import { pages } from 'menu'
+import 'moment/locale/th'
+import Checks from 'components/bootstrap/forms/Checks'
 
 interface WithdrawFilterInterface {
 	searchInput: string
+	status: string[]
 	amount: {
 		min: string
 		max: string
@@ -49,18 +53,23 @@ interface WithdrawFilterInterface {
 		min: string
 		max: string
 	},
-	bank: string[]
 	companyBank: CompanyBankInterface[]
 	timestamp: {
 		startDate: Date
 		endDate: Date
 		key: string
 	}[]
+	isCreatedAtDateChanged: boolean
 }
 
-interface WithdrawModalProperties {
+export interface WithdrawModalProperties {
 	type: WithdrawModalType
-	selectedRow: any
+	bank?: CompanyBankInterface
+	selectedRow: TransactionInterface
+}
+
+export interface WithdrawCancelModalProperties {
+	selectedRow: TransactionInterface
 }
 
 export enum WithdrawTableState {
@@ -74,7 +83,7 @@ const Withdraw = () => {
 
 	const [isOpenCreatedAtDatePicker, setIsOpenCreatedAtDatePicker] = useState(false)
 	const [searchInput, setSearchInput] = useState('')
-    const [isOpenCancelWithdrawModal, setIsOpenCancelWithdrawModal] = useState<WithdrawModalProperties>()
+    const [isOpenCancelWithdrawModal, setIsOpenCancelWithdrawModal] = useState<WithdrawCancelModalProperties>()
 	const [isOpenWithdrawModal, setIsOpenWithdrawModal] = useState<WithdrawModalProperties>()
     const [withdrawTableState, setWithdrawTableState] = useState(WithdrawTableState.Request)
 	const [isLoading, setIsLoading] = useState(false)
@@ -82,6 +91,9 @@ const Withdraw = () => {
 	const banks = useSelector(selectCompanyBankList)
 	const withdrawList = useSelector(selectWithdrawList)
 	const withdrawQueryList = useSelector(selectWithdrawQuery)
+
+	const permission = JSON.parse(localStorage.getItem('features') ?? '')
+	const readPermission = permission.withdraw[PermissionType.Read] === PermissionValue.Available
 
 	useEffect(() => {
 		let queryString = Object.values(withdrawQueryList).filter(Boolean).join('&')
@@ -97,12 +109,15 @@ const Withdraw = () => {
 			showNotification(
 				<span className='d-flex align-items-center'>
 					<InfoTwoTone className='me-1' />
-					<span>{t('get.withdraw.failed')}</span>
+					<span>ไม่สามารถเรียกดูรายการถอนเงินได้</span>
 				</span>,
-				t('please.refresh.again'),
+				CommonString.TryAgain,
 			)
 		})
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [withdrawQueryList, withdrawTableState])
 
+	useEffect(() => {
 		banks.length === 0 && getCompanyBankList('?type=withdraw,deposit_and_withdraw', (companyBankList: CompanyBankInterface[]) => {
 			dispatch(storeCompanyBank(companyBankList))
 			setIsLoading && setIsLoading(false)
@@ -113,17 +128,18 @@ const Withdraw = () => {
 			showNotification(
 				<span className='d-flex align-items-center'>
 					<InfoTwoTone className='me-1' />
-					<span>{t('get.company.bank.failed')}</span>
+					<span>ไม่สามารถเรียกดูธนาคารได้</span>
 				</span>,
-				t('please.refresh.again'),
+				CommonString.TryAgain,
 			)
 		})
 	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [withdrawQueryList, withdrawTableState])
+	}, [])
 
 	const formik = useFormik<WithdrawFilterInterface>({
 		initialValues: {
 			searchInput: '',
+			status: [],
             amount: {
                 min: '',
                 max: ''
@@ -139,14 +155,15 @@ const Withdraw = () => {
 					key: 'selection',
 				},
 			],
-            bank: [],
-			companyBank: []
+			companyBank: [],
+			isCreatedAtDateChanged: false
 		},
 		onSubmit: (values) => {
 			const defaultWithdrawQuery = {
 				...withdrawQueryList,
-				startCreated: `startCreated=${moment(values.timestamp[0].startDate).format('YYYY-MM-DD')}`,
-				endCreated: `endCreated=${moment(values.timestamp[0].endDate).format('YYYY-MM-DD')}`,
+				startCreated: values.isCreatedAtDateChanged ? `start=${moment(values.timestamp[0].startDate).format('YYYY-MM-DD')}` : '',
+				status: values.status.length > 0 ? `status=${values.status.join(',')}` : '',
+				endCreated: values.isCreatedAtDateChanged ? `end=${moment(values.timestamp[0].endDate).format('YYYY-MM-DD')}` : '',
 				min: values.amount.min ? `min=${values.amount.min}` : '',
 				max: values.amount.max ? `max=${values.amount.max}` : '',
 			}
@@ -156,7 +173,6 @@ const Withdraw = () => {
 					...defaultWithdrawQuery,
 					minLastDeposit: values.lastDepositAmount.min ? `minLastDeposit=${values.lastDepositAmount.min}` : '',
 					maxLastDeposit: values.lastDepositAmount.max ? `maxLastDeposit=${values.lastDepositAmount.max}` : '',
-					bank: values.bank.length > 0 ? `bank=${values.bank.join(',')}` : '',
 				}))
 			} else {
 				dispatch(storeWithdrawQuery({
@@ -171,7 +187,8 @@ const Withdraw = () => {
 		values,
 		setFieldValue,
 		handleChange,
-		resetForm,
+		initialValues,
+		setValues,
 		handleSubmit
 	} = formik
 
@@ -201,8 +218,22 @@ const Withdraw = () => {
 		debounceSearchChange(value)
 	}
 
+	const handleOnChangeMultipleSelector = (event: ChangeEvent<HTMLInputElement>, field: string) => {
+		let selectedValue = event.target.name
+		let index = parseInt(event.target.value)
+		let isSelected = event.target.checked
+		let newValue = values[field as keyof WithdrawFilterInterface] as string[]
+
+		if (isSelected) {
+			newValue.push(selectedValue)
+		} else {
+			newValue.splice(index, 1)
+		}
+		setFieldValue(field, newValue)
+	}
+
 	return (
-		<PageWrapper title={demoPages.crm.subMenu.customersList.text}>
+		<PageWrapper title={pages.withdraw.text}>
 			<SubHeader>
 				<SubHeaderLeft>
 					<label
@@ -220,26 +251,58 @@ const Withdraw = () => {
 					/>
 				</SubHeaderLeft>
 				<SubHeaderRight>
-					<CommonTableFilter
+					{readPermission && <CommonTableFilter
 						resetLabel={t('filter.reset')}
-						onReset={resetForm}
+						onReset={() => setValues({ ...initialValues, status: [], companyBank: [] })}
 						submitLabel={t('filter')}
 						onSubmit={handleSubmit}
 						filters={[
+							{
+								label: t('filter.status'),
+								disabled: withdrawTableState === WithdrawTableState.Request,
+								children: <div>
+									{WITHDRAW_STATUS.map((status: string) => {
+										let indexInStatusFilter = values.status.indexOf(status)
+										return <Checks
+												key={status}
+												label={
+													status === TransactionStatus.Success ? t('success') 
+														: t('cancel')
+												}
+												name={status}
+												value={indexInStatusFilter}
+												onChange={(e) => handleOnChangeMultipleSelector(e, 'status')}
+												checked={indexInStatusFilter > -1}
+												ariaLabel={status}
+											/>
+										}
+									)}
+                                </div>
+							},
                             {
 								label: t('filter.timestamp'),
-								children: <Dropdown >
-									<DropdownToggle color='dark' isLight hasIcon={false} isOpen={Boolean(isOpenCreatedAtDatePicker)} setIsOpen={setIsOpenCreatedAtDatePicker}>
-										<span data-tour='date-range'>
-											{`${moment(values.timestamp[0].startDate).format('MMM Do YY')} - ${moment(
-												values.timestamp[0].endDate,
-											).format('MMM Do YY')}`}
-										</span>
-									</DropdownToggle>
-									<DropdownMenu isAlignmentEnd isOpen={isOpenCreatedAtDatePicker} setIsOpen={setIsOpenCreatedAtDatePicker}>
-										{datePicker(values.timestamp, 'timestamp')}
-									</DropdownMenu>
-								</Dropdown>
+								children: <div>
+									<Checks
+										id='isCreatedAtDateChanged'
+										type='switch'
+										label={t('filter.created.at')}
+										onChange={handleChange}
+										checked={values.isCreatedAtDateChanged}
+										ariaLabel='Filter Created At Date'
+									/>
+									{values.isCreatedAtDateChanged && <Dropdown className='mt-2'>
+										<DropdownToggle color='dark' isLight hasIcon={false} isOpen={Boolean(isOpenCreatedAtDatePicker)} setIsOpen={setIsOpenCreatedAtDatePicker}>
+											<span data-tour='date-range'>
+												{`${moment(values.timestamp[0].startDate).format('MMM Do YY')} - ${moment(
+													values.timestamp[0].endDate,
+												).format('MMM Do YY')}`}
+											</span>
+										</DropdownToggle>
+										<DropdownMenu isAlignmentEnd isOpen={isOpenCreatedAtDatePicker} setIsOpen={setIsOpenCreatedAtDatePicker}>
+											{datePicker(values.timestamp, 'timestamp')}
+										</DropdownMenu>
+									</Dropdown>}
+								</div>
 							},
 							{
 								label: t('filter.amount'),
@@ -298,18 +361,9 @@ const Withdraw = () => {
 									selectedBank={values.companyBank}
 									setSelectedBank={(bank: CompanyBankInterface | CompanyBankInterface[]) => setFieldValue('companyBank', bank)}
 								/>
-							},
-							{
-								label: t('filter.recipient.bank'),
-								disabled: withdrawTableState === WithdrawTableState.History,
-								children: <CommonBanksDropdown
-									multipleSelect
-									selectedBankName={values.bank}
-									setSelectedBankName={(bank: string | string[]) => setFieldValue('bank', bank)}
-								/>
-							},
+							}
 						]} 
-					/>
+					/>}
 				</SubHeaderRight>
 			</SubHeader>
 			<Page>
@@ -323,7 +377,7 @@ const Withdraw = () => {
 										<CardLabel>
 											<CardTitle>{
 												withdrawTableState === WithdrawTableState.Request ?
-												t('withdraw:withdraw.request') : t('withdraw:withdraw.history')
+												t('request') : t('history')
 											}</CardTitle>
 										</CardLabel>
 										<ButtonGroup>
@@ -332,14 +386,14 @@ const Withdraw = () => {
 												isLight={withdrawTableState !== WithdrawTableState.Request}
 												onClick={() => setWithdrawTableState(WithdrawTableState.Request)}
 											>
-												{t('withdraw:request')}
+												{t('request')}
 											</Button>
 											<Button
 												color={withdrawTableState === WithdrawTableState.History ? 'success' : 'dark'}
 												isLight={withdrawTableState !== WithdrawTableState.History}
 												onClick={() => setWithdrawTableState(WithdrawTableState.History)}
 											>
-												{t('withdraw:history')}
+												{t('history')}
 											</Button>
 										</ButtonGroup>
 									</CardHeader>
@@ -348,7 +402,7 @@ const Withdraw = () => {
 								setIsOpenWithdrawModal={withdrawTableState === WithdrawTableState.Request ? setIsOpenWithdrawModal : undefined} 
 								setIsOpenCancelWithdrawModal={withdrawTableState === WithdrawTableState.Request ? setIsOpenCancelWithdrawModal : undefined}
 								columns={{ 
-									id: false,
+									id: true,
 									status: withdrawTableState === WithdrawTableState.History, 
 									mobileNumber: true, 
 									notes: withdrawTableState === WithdrawTableState.History, 

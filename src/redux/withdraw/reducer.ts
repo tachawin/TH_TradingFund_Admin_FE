@@ -1,15 +1,18 @@
-import { InitialState, STORE_WITHDRAW_LIST, STORE_WITHDRAW_LIST_QUERY, WithdrawActionTypes } from './types'
+import { removeItemById } from 'redux/utils'
+import { InitialState, REMOVE_WITHDRAW, STORE_WITHDRAW_LIST, STORE_WITHDRAW_LIST_QUERY, WithdrawActionTypes } from './types'
 
 const INITIAL_STATE: InitialState = {
   withdrawList: [],
   withdrawQuery: {
     keyword: '',
     status: '',
-    bankName: '',
     start: '',
     end: '',
     min: '',
-    max: ''
+    max: '',
+    minLastDeposit: '',
+    maxLastDeposit: '',
+    companyBankId: '',
   },
 }
 
@@ -24,6 +27,11 @@ const withdrawReducer = (state = INITIAL_STATE, action: WithdrawActionTypes): In
       return {
         ...state,
         withdrawQuery: action.payload
+      }
+    case REMOVE_WITHDRAW:
+      return {
+        ...state,
+        withdrawList: removeItemById(state.withdrawList, action.payload, 'transactionId')
       }
     default:
       return state

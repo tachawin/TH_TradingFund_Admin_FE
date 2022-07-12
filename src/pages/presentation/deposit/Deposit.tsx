@@ -8,7 +8,6 @@ import SubHeader, {
 	SubheaderSeparator,
 } from '../../../layout/SubHeader/SubHeader'
 import Page from '../../../layout/Page/Page'
-import { demoPages } from '../../../menu'
 import moment from 'moment'
 import { DateRange } from 'react-date-range'
 import Button from '../../../components/bootstrap/Button'
@@ -34,6 +33,9 @@ import { CompanyBankInterface } from 'common/apis/companyBank'
 import { STATUS, TransactionInterface, TransactionStatus } from 'common/apis/transaction'
 import { AttachMoney, InfoTwoTone, Search } from '@mui/icons-material'
 import COLORS from 'common/data/enumColors'
+import { CommonString } from 'common/data/enumStrings'
+import { PermissionType, PermissionValue } from 'common/apis/user'
+import { pages } from 'menu'
 
 interface DepositFilterInterface {
 	searchInput: string
@@ -63,6 +65,10 @@ const Deposit = () => {
 	const depositList = useSelector(selectDepositList)
 	const depositQueryList = useSelector(selectDepositQuery)
 
+	const permission = JSON.parse(localStorage.getItem('features') ?? '')
+	const readPermission = permission.deposit[PermissionType.Read] === PermissionValue.Available
+	const createPermission = permission.deposit[PermissionType.Create] === PermissionValue.Available
+
 	useEffect(() => {
 		let queryString = Object.values(depositQueryList).filter(Boolean).join('&')
 		let query = queryString ? `?${queryString}` : ''
@@ -77,9 +83,9 @@ const Deposit = () => {
 			showNotification(
 				<span className='d-flex align-items-center'>
 					<InfoTwoTone className='me-1' />
-					<span>{t('get.deposit.failed')}</span>
+					<span>ไม่สามารถเรียกดูรายการฝากเงินได้</span>
 				</span>,
-				t('please.refresh.again'),
+				CommonString.TryAgain,
 			)
 		})
 	// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,7 +125,8 @@ const Deposit = () => {
 	const { 
 		values,
 		setFieldValue,
-		resetForm,
+		setValues,
+		initialValues,
 		handleSubmit,
 		handleChange
 	} = formik
@@ -165,7 +172,7 @@ const Deposit = () => {
 	}
 
 	return (
-		<PageWrapper title={demoPages.crm.subMenu.customersList.text}>
+		<PageWrapper title={pages.deposit.text}>
 			<SubHeader>
 				<SubHeaderLeft>
 					<label
@@ -183,9 +190,9 @@ const Deposit = () => {
 					/>
 				</SubHeaderLeft>
 				<SubHeaderRight>
-					<CommonTableFilter
+					{readPermission && <CommonTableFilter
 						resetLabel={t('filter.reset')}
-						onReset={resetForm}
+						onReset={() => setValues({ ...initialValues, status: [], bank: [] })}
 						submitLabel={t('filter')}
 						onSubmit={handleSubmit}
 						filters={[
@@ -261,7 +268,7 @@ const Deposit = () => {
 								</div>
 							},
 							{
-								label: t('filter.bank'),
+								label: t('filter.recipient.bank'),
 								children: <CompanyBanksDropdown
 									selectedBank={values.bank}
 									setSelectedBank={(bank: CompanyBankInterface | CompanyBankInterface[]) => setFieldValue('bank', bank)}
@@ -269,16 +276,17 @@ const Deposit = () => {
 								/>
 							},
 						]} 
-					/>
-					<SubheaderSeparator />
-					<Button
+						/>
+					}
+					{(readPermission && createPermission) && <SubheaderSeparator />}
+					{createPermission && <Button
 						icon={AttachMoney}
 						color='primary'
 						isLight
 						onClick={() => setIsOpenDepositModal({ type: DepositModalType.Add, selectedRow: undefined})}
 					>
 						{t('deposit')}
-					</Button>
+					</Button>}
 				</SubHeaderRight>
 			</SubHeader>
 			<Page>
